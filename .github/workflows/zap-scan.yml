@@ -1,0 +1,30 @@
+name: DAST - OWASP ZAP
+
+# Run on every push and every pull request
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  # Scans the running application, does not fail the build
+  zap-baseline:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    env:
+      # Session secret comes from GitHub Actions secrets
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the images and start the application
+        run: docker compose up -d --build
+
+      - name: Wait until the application answers
+        run: curl --retry 40 --retry-delay 3 --retry-all-errors -fsS -o /dev/null http://localhost:4000/login
+
+      - name: Run the ZAP baseline scan
+        # -I: warnings do not fail the build
+        run: |
+          docker run --rm --network host ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:4000 -I
