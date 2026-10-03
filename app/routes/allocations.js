@@ -13,17 +13,21 @@ function AllocationsHandler(db) {
         // Fix for A4 Insecure DOR -  take user id from session instead of from URL param
         const { userId } = req.session;
         */
-        const {
-            userId
-        } = req.params;
+        // Take the user ID from the session, not from the URL
+        const sessionUserId = req.session.userId;
         const {
             threshold
         } = req.query;
 
-        allocationsDAO.getByUserIdAndThreshold(userId, threshold, (err, allocations) => {
+        // Users can only view their own allocations
+        if (String(req.params.userId) !== String(sessionUserId)) {
+            return res.status(403).send("403 Forbidden: You do not have permission to view this data.");
+        }
+
+        allocationsDAO.getByUserIdAndThreshold(sessionUserId, threshold, (err, allocations) => {
             if (err) return next(err);
             return res.render("allocations", {
-                userId,
+                userId: sessionUserId,
                 allocations,
                 environmentalScripts
             });
