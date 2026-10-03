@@ -1,0 +1,18 @@
+title = "Gitleaks configuration"
+
+# Use all default Gitleaks rules
+[extend]
+useDefault = true
+
+# Ignore two sample values that ship with NodeGoat
+[allowlist]
+description = "NodeGoat sample files, not real credentials"
+# Sample TLS key (current path and its old path in the Git history)
+paths = [
+    '''artifacts/cert/server\.key''',
+    '''app/cert/key\.pem''',
+]
+# Placeholder ZAP API key
+regexes = [
+    '''v9dn0balpqas1pcc281tn5ood1''',
+]
