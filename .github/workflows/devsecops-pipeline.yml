@@ -1,56 +1,86 @@
-name: NodeGoat DevSecOps Pipeline
+name: DevSecOps Pipeline
 
-on:
-  push:
-    branches: [ "master", "main" ]
+# Run on every push and every pull request
+on: [push, pull_request]
+
+# The pipeline only needs to read the repository
+permissions:
+  contents: read
 
 jobs:
-  secrets-scanning:
-    name: 1. Secrets Scanning (Gitleaks)
+  # Build the containers, start the application and test it
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    env:
+      # Session secret comes from GitHub Actions secrets
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+    steps:
+      # Pinned to a commit so the action cannot change
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the images and start the application
+        run: docker compose up -d --build
+
+      - name: Test that the login page loads
+        run: curl --retry 40 --retry-delay 3 --retry-all-errors -fsS -o /dev/null http://localhost:4000/login
+
+      - name: Test that a user can log in
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -d "userName=user1&password=User1_123" http://localhost:4000/login)
+          echo "Login returned HTTP $code (expected 302)"
+          [ "$code" = "302" ]
+
+      - name: Show the application log if something failed
+        if: failure()
+        run: docker compose logs web
+
+  # Gate 1: fails the build if a secret is found in the Git history
+  secrets-scan:
+    name: "Gate 1: Secrets Scan (Gitleaks)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # full history
+
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 \
+            detect --source /repo --config /repo/.gitleaks.toml --redact --verbose
 
-  sast-scanning:
-    name: 2. SAST Scanning (Semgrep)
+  # Gate 2: scans the source code, does not fail the build
+  sast:
+    name: "Gate 2: SAST (Semgrep)"
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep:1.119.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Run Semgrep with the OWASP Top 10 rules
+        run: semgrep scan --config p/owasp-top-ten
+
+  # Gate 3: scans the npm dependencies, does not fail the build
+  dependency-scan:
+    name: "Gate 3: Dependency Scan (npm audit)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: "p/owasp-top-ten"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-  sca-dependency-scanning:
-    name: 3. SCA Scanning (npm audit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-      - name: Install dependencies
-        run: npm install --package-lock-only
       - name: Run npm audit
-        run: npm audit --audit-level=high || true 
+        run: npm audit --package-lock-only || echo "::warning::npm audit found vulnerable dependencies"
 
-  container-scanning:
-    name: 4. Container Scanning (Trivy)
+  # Gate 4: scans the built Docker image, does not fail the build
+  container-scan:
+    name: "Gate 4: Container Image Scan (Trivy)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Build Docker Image
-        run: docker build -t nodegoat-app:${{ github.sha }} .
-      - name: Run Trivy Scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'nodegoat-app:${{ github.sha }}'
-          format: 'table'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the Docker image
+        run: docker build -t nodegoat-app .
+
+      - name: Scan the image with Trivy
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1 \
+            image --severity CRITICAL,HIGH --exit-code 0 nodegoat-app
