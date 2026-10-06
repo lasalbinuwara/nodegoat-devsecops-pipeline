@@ -10,6 +10,7 @@ const envConf = require(path.resolve(__dirname + "/../config/env/" + finalEnv.to
 const config = { ...allConf, ...envConf };
 
 console.log(`Current Config:`);
-console.log(util.inspect(config, false, null));
+// Hide the secrets in the startup log
+console.log(util.inspect({ ...config, cookieSecret: "[hidden]", cryptoKey: "[hidden]" }, false, null));
 
 module.exports = config;

@@ -15,6 +15,12 @@ const marked = require("marked");
 const app = express(); // Web framework to handle routing requests
 const routes = require("./app/routes");
 const { port, db, cookieSecret } = require("./config/config"); // Application config properties
+
+// Stop if the session secret is missing or too short
+if (!cookieSecret || cookieSecret.length < 32) {
+    console.error("FATAL: SESSION_SECRET is not set or is shorter than 32 characters.");
+    process.exit(1);
+}
 /*
 // Fix for A6-Sensitive Data Exposure
 // Load keys for establishing secure HTTPS connection
@@ -81,8 +87,9 @@ MongoClient.connect(db, (err, db) => {
         //},
         secret: cookieSecret,
         // Both mandatory in Express v4
-        saveUninitialized: true,
-        resave: true
+        // Only save sessions that are actually used
+        saveUninitialized: false,
+        resave: false,
         /*
         // Fix for A5 - Security MisConfig
         // Use generic cookie name
@@ -99,6 +106,15 @@ MongoClient.connect(db, (err, db) => {
         }
         */
 
+        // Session cookie: new name, hidden from scripts, same-site only, expires after 30 minutes without activity
+        name: "sessionId",
+        rolling: true,
+        cookie: {
+            httpOnly: true,
+            sameSite: "strict",
+            secure: process.env.NODE_ENV === "production",
+            maxAge: 30 * 60 * 1000
+        }
     }));
 
     /*
