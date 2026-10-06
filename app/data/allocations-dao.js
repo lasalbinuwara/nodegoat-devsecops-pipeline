@@ -56,6 +56,17 @@ const AllocationsDAO = function(db){
 
     this.getByUserIdAndThreshold = (userId, threshold, callback) => {
         const parsedUserId = parseInt(userId);
+        let parsedThreshold;
+
+        // Only allow a whole number from 0 to 99
+        if (threshold) {
+            if (typeof threshold !== "string" || !/^[0-9]{1,2}$/.test(threshold)) {
+                const error = new Error("Invalid threshold value: enter a whole number between 0 and 99.");
+                error.status = 400;
+                return callback(error, null);
+            }
+            parsedThreshold = parseInt(threshold, 10);
+        }
 
         const searchCriteria = () => {
 
@@ -74,8 +85,12 @@ const AllocationsDAO = function(db){
                 }
                 throw `The user supplied threshold: ${parsedThreshold} was not valid.`;
                 */
+                // Use the $gt operator instead of $where
                 return {
-                    $where: `this.userId == ${parsedUserId} && this.stocks > '${threshold}'`
+                    userId: parsedUserId,
+                    stocks: {
+                        $gt: parsedThreshold
+                    }
                 };
             }
             return {
