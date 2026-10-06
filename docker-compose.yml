@@ -6,6 +6,8 @@ services:
     environment:
       NODE_ENV:
       MONGODB_URI: mongodb://mongo:27017/nodegoat
+      # Session secret comes from the .env file
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is not set - copy .env.example to .env and set a value}
     command: sh -c "until nc -z -w 2 mongo 27017 && echo 'mongo is ready for connections' && node artifacts/db-reset.js && npm start; do sleep 2; done"
     ports:
       - "4000:4000"

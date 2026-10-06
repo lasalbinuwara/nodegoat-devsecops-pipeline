@@ -113,13 +113,21 @@ function SessionHandler(db) {
             // by wrapping the below code as a function callback for the method req.session.regenerate()
             // i.e:
             // `req.session.regenerate(() => {})`
-            req.session.userId = user._id;
-            return res.redirect(user.isAdmin ? "/benefits" : "/dashboard");
+            // Create a new session ID at login
+            req.session.regenerate((regenerateError) => {
+                if (regenerateError) return next(regenerateError);
+                req.session.userId = user._id;
+                return res.redirect(user.isAdmin ? "/benefits" : "/dashboard");
+            });
         });
     };
 
     this.displayLogoutPage = (req, res) => {
-        req.session.destroy(() => res.redirect("/"));
+        // End the session and remove the cookie
+        req.session.destroy(() => {
+            res.clearCookie("sessionId");
+            res.redirect("/");
+        });
     };
 
     this.displaySignupPage = (req, res) => {
